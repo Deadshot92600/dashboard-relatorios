@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>LSPD Los Santos | Kuma RP</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { background:#0b1220; color:white; font-family:Arial; }
+.container { padding:20px; }
+
+.card {
+  background:#1f2937;
+  padding:15px;
+  border-radius:10px;
+  margin-bottom:20px;
+}
+
+input, select, button {
+  padding:8px;
+  margin:5px;
+  border-radius:6px;
+  border:none;
+}
+
+button { background:#2563eb; color:white; cursor:pointer; }
+
+table { width:100%; border-collapse:collapse; }
+td, th { padding:8px; border-bottom:1px solid #333; text-align:center; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>🚔 LSPD Los Santos | Kuma RP</h2>
+
+<!-- FORM -->
+<div class="card">
+<input placeholder="Nº Caso" id="caseId">
+
+<select id="agent"></select>
+
+<select id="tipo">
+<option>Ocorrência</option>
+<option>Abordagem</option>
+<option>Investigação</option>
+<option>Operação</option>
+</select>
+
+<input type="date" id="data">
+
+<button onclick="add()">Adicionar</button>
+</div>
+
+<!-- FILTRO -->
+<div class="card">
+<h3>📅 Filtro</h3>
+
+<select id="filtro">
+<option value="30">Últimos 30 dias</option>
+<option value="60">Últimos 60 dias</option>
+<option value="custom">Personalizado</option>
+</select>
+
+<br>
+
+<input type="date" id="dataInicio">
+<input type="date" id="dataFim">
+
+<button onclick="render()">Aplicar</button>
+</div>
+
+<!-- GRAFICOS -->
+<div class="card">
+<h3 id="range">📊 Intervalo</h3>
+
+<canvas id="chart1"></canvas>
+<canvas id="chart2"></canvas>
+<canvas id="chart3"></canvas>
+
+</div>
+
+<!-- TABELA -->
+<div class="card">
+<h3>📁 Relatórios</h3>
+<table>
+<thead>
+<tr>
+<th>Caso</th>
+<th>Agente</th>
+<th>Tipo</th>
+<th>Data</th>
+<th>Nota</th>
+<th>Avaliar</th>
+<th>Ações</th>
+</tr>
+</thead>
+<tbody id="table"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+
+// AGENTES + PATENTE
+const agents = [
+{n:"401 Johnny Castro",r:"chief"},
+{n:"421 Papi Luxo",r:"senior"},
+{n:"422 José Madail",r:"senior"},
+{n:"423 Marco Aguiar",r:"senior"},
+{n:"424 Pedro Leite",r:"senior"},
+{n:"425 João Pedro",r:"senior"},
+{n:"501 S One",r:"agent"},
+{n:"502 Matheus Rodrigues",r:"agent"},
+{n:"602 Andre Garcia",r:"provisional"},
+{n:"603 Gervásio Bicho",r:"provisional"},
+{n:"604 Isaac James",r:"provisional"},
+{n:"606 Rui Oliveira",r:"provisional"},
+{n:"607 Lone Star",r:"provisional"},
+{n:"608 Pipo Piparadas",r:"provisional"},
+{n:"609 Aurelio Febras",r:"provisional"},
+{n:"610 Chris Sousa",r:"provisional"},
+{n:"611 Carlos Alberto",r:"provisional"},
+{n:"612 Julio Cesar",r:"provisional"},
+{n:"613 Jose Adelino",r:"provisional"},
+{n:"701 Mike Taysons",r:"cadet"},
+{n:"702 Angelo Mendes",r:"cadet"},
+{n:"703 Raven Skull",r:"cadet"},
+{n:"704 Falcon SkyDancer",r:"cadet"},
+{n:"705 Tiago Lima",r:"cadet"},
+{n:"706 Joaquim Rolha",r:"cadet"},
+{n:"707 Dylan Felix",r:"cadet"},
+{n:"708 Raul Freitas",r:"cadet"},
+{n:"709 Kipah Nemesio",r:"cadet"},
+{n:"710 António Vieira",r:"cadet"},
+{n:"711 Manuel Almirante",r:"cadet"},
+{n:"712 Logan Toquio",r:"cadet"},
+{n:"713 Zé Mário",r:"cadet"},
+{n:"714 Rúben Monteiro",r:"cadet"}
+];
+
+// CORES POR PATENTE
+function getColor(role){
+  if(role==="chief") return "#ef4444";
+  if(role==="senior") return "#f97316";
+  if(role==="agent") return "#3b82f6";
+  if(role==="provisional") return "#a855f7";
+  return "#22c55e";
+}
+
+// DROPDOWN
+const sel = document.getElementById("agent");
+agents.forEach(a=>{
+  let o=document.createElement("option");
+  o.value=a.n;
+  o.textContent=a.n;
+  sel.appendChild(o);
+});
+
+let reports = JSON.parse(localStorage.getItem("db")||"[]");
+
+// ADD
+function add(){
+  const caseId = document.getElementById("caseId").value || Date.now();
+  const agent = document.getElementById("agent").value;
+  const tipo = document.getElementById("tipo").value;
+  const date = document.getElementById("data").value;
+
+  reports.push({
+    id:caseId,
+    agent,
+    tipo,
+    date: date ? new Date(date).toISOString() : new Date().toISOString(),
+    rating:null
+  });
+
+  localStorage.setItem("db", JSON.stringify(reports));
+  render();
+}
+
+// RATE
+function rate(id,val){
+  let r=reports.find(x=>x.id==id);
+  if(r){ r.rating=val; localStorage.setItem("db", JSON.stringify(reports)); render(); }
+}
+
+// DELETE
+function removeReport(id){
+  reports=reports.filter(r=>r.id!=id);
+  localStorage.setItem("db", JSON.stringify(reports));
+  render();
+}
+
+// FILTRO
+function getFiltered(){
+
+  const f=document.getElementById("filtro").value;
+  const now=new Date();
+
+  if(f==="30") return reports.filter(r=> (now-new Date(r.date))/(1000*60*60*24)<=30);
+  if(f==="60") return reports.filter(r=> (now-new Date(r.date))/(1000*60*60*24)<=60);
+
+  const i=document.getElementById("dataInicio").value;
+  const e=document.getElementById("dataFim").value;
+
+  if(!i||!e) return reports;
+
+  return reports.filter(r=>{
+    let d=new Date(r.date);
+    return d>=new Date(i)&&d<=new Date(e);
+  });
+}
+
+// RENDER
+function render(){
+
+let filtered=getFiltered();
+
+// DATAS
+if(filtered.length){
+  let d=filtered.map(r=>new Date(r.date));
+  let min=new Date(Math.min(...d));
+  let max=new Date(Math.max(...d));
+
+  document.getElementById("range").innerText =
+  `📊 ${min.toLocaleDateString()} → ${max.toLocaleDateString()}`;
+}
+
+// STATS
+let stats={};
+agents.forEach(a=>stats[a.n]={count:0,total:0,rated:0,role:a.r});
+
+filtered.forEach(r=>{
+  stats[r.agent].count++;
+  if(r.rating){ stats[r.agent].total+=r.rating; stats[r.agent].rated++; }
+});
+
+// TABELA
+let table=document.getElementById("table");
+table.innerHTML="";
+
+filtered.forEach(r=>{
+  let btn="";
+  for(let i=1;i<=10;i++) btn+=`<button onclick="rate('${r.id}',${i})">${i}</button>`;
+
+  table.innerHTML+=`
+  <tr>
+    <td>${r.id}</td>
+    <td>${r.agent}</td>
+    <td>${r.tipo}</td>
+    <td>${new Date(r.date).toLocaleDateString()}</td>
+    <td>${r.rating||"-"}</td>
+    <td>${btn}</td>
+    <td><button onclick="removeReport('${r.id}')">🗑️</button></td>
+  </tr>`;
+});
+
+// DADOS
+let labels=agents.map(a=>a.n);
+let prod=labels.map(a=>stats[a].count);
+let avg=labels.map(a=> stats[a].rated? stats[a].total/stats[a].rated:0);
+let colors=agents.map(a=>getColor(a.r));
+
+// RESET GRAFICOS
+if(window.c1) c1.destroy();
+if(window.c2) c2.destroy();
+if(window.c3) c3.destroy();
+
+// PRODUÇÃO
+c1=new Chart(chart1,{
+type:"bar",
+data:{labels,datasets:[{label:"Produção",data:prod,backgroundColor:colors}]}
+});
+
+// QUALIDADE
+c2=new Chart(chart2,{
+type:"bar",
+data:{labels,datasets:[{label:"Qualidade",data:avg,backgroundColor:colors}]},
+options:{scales:{y:{max:10,beginAtZero:true}}}
+});
+
+// COMBINADO
+c3=new Chart(chart3,{
+type:"bar",
+data:{
+labels,
+datasets:[
+{label:"Produção",data:prod,backgroundColor:colors},
+{label:"Qualidade",data:avg,backgroundColor:"#ffffff"}
+]
+}
+});
+
+}
+
+render();
+
+</script>
+
+</body>
+</html>
